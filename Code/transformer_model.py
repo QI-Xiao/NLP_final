@@ -3,6 +3,7 @@ import collections
 
 import torch
 from torch.utils import data
+import torch.nn.functional as F
 
 from transformers import BertForSequenceClassification, DistilBertForSequenceClassification
 from transformers import AutoTokenizer, DataCollatorWithPadding
@@ -44,12 +45,13 @@ def get_data(data_type):
 
     print(path, collections.Counter(labels))
 
-    inputs = tokenizer(sentences, padding='max_length', truncation=True)
+    inputs = tokenizer(sentences, truncation=True)  # , padding='max_length'
 
     data_set = Dataset(inputs, data_type, labels)
 
     shuffle = True if data_type == 'train' else False
-    return torch.utils.data.DataLoader(data_set, shuffle=shuffle, batch_size=32, collate_fn=data_collator)
+    data_loader = torch.utils.data.DataLoader(data_set, shuffle=shuffle, batch_size=32, collate_fn=data_collator)
+    return data_loader, labels
 
 class Dataset(data.Dataset):
     '''
@@ -76,9 +78,11 @@ class Dataset(data.Dataset):
         return item
 
 
-train_dataloader = get_data('train')
-test_dataloader = get_data('test')
-val_dataloader = get_data('val')
+train_dataloader, train_labels = get_data('train')
+test_dataloader, test_labels = get_data('test')
+val_dataloader, val_labels = get_data('val')
+
+train_labels = torch.Tensor(train_labels)
 
 # for batch in train_dataloader:
 #     break
@@ -86,7 +90,10 @@ val_dataloader = get_data('val')
 # # print(batch)
 # print({k: v.shape for k, v in batch.items()})
 
-model = DistilBertForSequenceClassification.from_pretrained(checkpoint, num_labels=6)
+# model = DistilBertForSequenceClassification.from_pretrained(checkpoint, num_labels=6)
+
+from models import BertRNNModel
+model = BertRNNModel('bert-base-uncased', 6)
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 model.to(device)
@@ -110,7 +117,10 @@ for epoch in range(num_epochs):
     for batch in train_dataloader:
         batch = {k: v.to(device) for k, v in batch.items()}
         outputs = model(**batch)
-        loss = outputs.loss
+        if True:
+            loss = F.cross_entropy(outputs, train_labels)
+        else:
+            loss = outputs.loss
         loss.backward()
 
         optimizer.step()
@@ -130,6 +140,8 @@ for batch in val_dataloader:
     logits = outputs.logits
     predictions = torch.argmax(logits, dim=-1)
     metric.add_batch(predictions=predictions, references=batch["labels"])
-    pred_lst.append(predictions)
+    pred_lst.extend(predictions.tolist())
 
-print(metric.compute())
+res = f1_score(val_labels, pred_lst, average='micro')
+print(res)
+# print(metric.compute(average='micro'))
