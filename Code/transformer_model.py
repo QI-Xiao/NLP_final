@@ -82,8 +82,6 @@ train_dataloader, train_labels = get_data('train')
 test_dataloader, test_labels = get_data('test')
 val_dataloader, val_labels = get_data('val')
 
-train_labels = torch.Tensor(train_labels)
-
 # for batch in train_dataloader:
 #     break
 #
@@ -118,7 +116,7 @@ for epoch in range(num_epochs):
         batch = {k: v.to(device) for k, v in batch.items()}
         outputs = model(**batch)
         if True:
-            loss = F.cross_entropy(outputs, train_labels)
+            loss = F.cross_entropy(outputs, batch['labels'])
         else:
             loss = outputs.loss
         loss.backward()
@@ -136,8 +134,10 @@ for batch in val_dataloader:
     batch = {k: v.to(device) for k, v in batch.items()}
     with torch.no_grad():
         outputs = model(**batch)
-
-    logits = outputs.logits
+    if True:
+        logits = outputs
+    else:
+        logits = outputs.logits
     predictions = torch.argmax(logits, dim=-1)
     metric.add_batch(predictions=predictions, references=batch["labels"])
     pred_lst.extend(predictions.tolist())
