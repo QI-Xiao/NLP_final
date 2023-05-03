@@ -87,7 +87,7 @@ train_dataloader, train_labels, train_sentences = get_data('train')
 test_dataloader, test_labels, _ = get_data('test')
 val_dataloader, val_labels, _ = get_data('val')
 
-
+# choose a model.
 model_bert_lstm = False
 
 if model_bert_lstm:
@@ -104,7 +104,7 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 model.to(device)
 
 
-num_epochs = 5
+num_epochs = 10
 
 num_training_steps = num_epochs * len(train_dataloader)
 
@@ -120,6 +120,7 @@ acc_train_lst = []
 acc_test_lst = []
 
 
+f1_type = 'macro'   # macro
 
 for epoch in range(num_epochs):
 
@@ -154,7 +155,7 @@ for epoch in range(num_epochs):
             origin_train_lst.extend(batch['labels'].tolist())
 
     avg_train_loss = (train_loss / steps_train).item()
-    acc_train = f1_score(pred_train_lst, origin_train_lst, average='micro')
+    acc_train = f1_score(pred_train_lst, origin_train_lst, average=f1_type)
 
 
     model.eval()
@@ -182,10 +183,11 @@ for epoch in range(num_epochs):
             metric.add_batch(predictions=predictions, references=batch["labels"])
             pred_test_lst.extend(predictions.tolist())
 
-    acc_test = f1_score(pred_test_lst, test_labels, average='micro')
+    acc_test = f1_score(pred_test_lst, test_labels, average=f1_type)
     avg_test_loss = (test_loss / steps_test).item()
 
-    print('epoch' + str(epoch), avg_train_loss, acc_train, avg_test_loss, acc_test, '\n')
+    print('epoch' + str(epoch), 'train loss', avg_train_loss, 'train f1 '+f1_type, acc_train)
+    print('test loss', avg_test_loss, 'test f1 '+f1_type,  acc_test, '\n')
 
     train_loss_lst.append(avg_train_loss)
     test_loss_lst.append(avg_test_loss)
@@ -212,7 +214,7 @@ for batch in val_dataloader:
 
 acc_val = f1_score(pred_val_lst, val_labels, average='micro')
 acc_val2 = f1_score(pred_val_lst, val_labels, average='macro')
-print('val accuracy:', acc_val, acc_val2)
+print('val accuracy:', 'f1 micro', acc_val, '   f1 macro', acc_val2)
 
 
 import matplotlib.pyplot as plt
@@ -248,3 +250,25 @@ if not model_bert_lstm:
     shap.plots.bar(shap_values[:, :, 3].mean(0))
     shap.plots.bar(shap_values[:, :, 4].mean(0))
     shap.plots.bar(shap_values[:, :, 5].mean(0))
+
+
+import torch.nn.functional as F
+from lime.lime_text import LimeTextExplainer
+
+
+class_names = [0, 1, 2, 3, 4, 5]
+
+def predictor(texts):
+    model.to('cpu')
+    outputs = model(**tokenizer(texts, return_tensors="pt", padding=True))
+    tensor_logits = outputs[0]
+    probas = F.softmax(tensor_logits).detach().numpy()
+    return probas
+
+explainer = LimeTextExplainer(class_names=class_names)
+
+exp1 = explainer.explain_instance(train_sentences[1], predictor, num_features=6, num_samples=2000)
+exp1.save_to_file('lime1.html')
+
+exp2 = explainer.explain_instance(train_sentences[3], predictor, num_features=6, num_samples=2000)
+exp2.save_to_file('lime2.html')
