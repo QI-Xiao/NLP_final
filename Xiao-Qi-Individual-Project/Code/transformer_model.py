@@ -28,6 +28,13 @@ from models import BertRNNModel
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
 
+# choose a model. False means the bert model. True means bert model with LSTM head
+model_bert_lstm = False
+
+# number of epoches
+num_epochs = 10
+
+
 checkpoint = "distilbert-base-uncased"
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
@@ -53,7 +60,7 @@ def get_data(data_type):
         sentences.append(s)
         labels.append(dic_labels[l])
 
-    print(path, collections.Counter(labels))
+    print(data_type, path, collections.Counter(labels))
 
     inputs = tokenizer(sentences, truncation=True)  # , padding='max_length'
 
@@ -92,24 +99,19 @@ train_dataloader, train_labels, train_sentences = get_data('train')
 test_dataloader, test_labels, _ = get_data('test')
 val_dataloader, val_labels, _ = get_data('val')
 
-# choose a model.
-model_bert_lstm = False
 
 if model_bert_lstm:
     # model bert with lstm
     model = BertRNNModel('bert-base-uncased', 6)
-    print('using model bert with lstm')
+    print('using model bert with lstm head')
 else:
     # model bert classification
     checkpoint = "distilbert-base-uncased"
     model = DistilBertForSequenceClassification.from_pretrained(checkpoint, num_labels=6)
-    print('using model bert classification')
+    print('using model bert classification without lstm')
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 model.to(device)
-
-
-num_epochs = 1
 
 num_training_steps = num_epochs * len(train_dataloader)
 
@@ -222,7 +224,7 @@ acc_val2 = f1_score(pred_val_lst, val_labels, average='macro')
 print('val accuracy:', 'f1 micro', acc_val, '   f1 macro', acc_val2)
 
 
-# plot the result
+print('plot the result')
 epochs = [i for i in range(num_epochs)]
 fig , ax = plt.subplots(1,2)
 
@@ -242,8 +244,8 @@ ax[1].set_xlabel("Epochs")
 plt.show()
 
 
-# Do interpret using shap
 if not model_bert_lstm:
+    print('Do interpret using shap')
     pred = transformers.pipeline("text-classification", model=model, tokenizer=tokenizer, device=0, return_all_scores=True)
     explainer = shap.Explainer(pred)
 
@@ -256,25 +258,25 @@ if not model_bert_lstm:
     shap.plots.bar(shap_values[:, :, 5].mean(0))
 
 
-# do interpret using lime
-class_names = [0, 1, 2, 3, 4, 5]
+    print('do interpret using lime')
+    class_names = [0, 1, 2, 3, 4, 5]
 
-def predictor(texts):
-    model.to('cpu')
-    outputs = model(**tokenizer(texts, return_tensors="pt", padding=True))
-    tensor_logits = outputs[0]
-    probas = F.softmax(tensor_logits).detach().numpy()
-    return probas
+    def predictor(texts):
+        model.to('cpu')
+        outputs = model(**tokenizer(texts, return_tensors="pt", padding=True))
+        tensor_logits = outputs[0]
+        probas = F.softmax(tensor_logits).detach().numpy()
+        return probas
 
-explainer = LimeTextExplainer(class_names=class_names)
+    explainer = LimeTextExplainer(class_names=class_names)
 
-images_dir = os.getcwd() + os.path.sep + 'Images'
+    images_dir = os.getcwd() + os.path.sep + 'Images' + os.path.sep
 
-if not os.path.exists(images_dir):
-    os.makedirs(images_dir)
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
 
-exp1 = explainer.explain_instance(train_sentences[1], predictor, num_features=6, num_samples=2000)
-exp1.save_to_file(images_dir + 'lime1.html')
+    exp1 = explainer.explain_instance(train_sentences[1], predictor, num_features=6, num_samples=2000)
+    exp1.save_to_file(images_dir + 'lime1.html')
 
-exp2 = explainer.explain_instance(train_sentences[3], predictor, num_features=6, num_samples=2000)
-exp2.save_to_file(images_dir + 'lime2.html')
+    exp2 = explainer.explain_instance(train_sentences[3], predictor, num_features=6, num_samples=2000)
+    exp2.save_to_file(images_dir + 'lime2.html')
